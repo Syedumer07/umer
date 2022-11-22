@@ -1,0 +1,1285 @@
+
+Documentation:
+https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.types.StructField.html?highlight=structfield
+
+
+----------------------------------Pyspark Joins----------------------------
+
+
+scientists = spark.read.csv("duocar/raw/data_scientists/", header=True, inferSchema=True)
+scientists.show()
+
+offices = spark.read.csv("duocar/raw/offices/", header=True, inferSchema=True)
+offices.show()
+
+
+scientists.crossJoin(offices).show()
+
+
+# Use the `join` DataFrame method with different values of the `how` argument to perform other types of joins
+
+# Use a join expression and the value `inner` to return only those rows for which the join expression is true:
+scientists.join(offices, scientists.office_id == offices.office_id, "inner").show()
+
+# This gives us a list of data scientists associated with an office and the corresponding office information.
+
+# Since the join key has the same name on both DataFrames, we can simplify the join as follows:
+scientists.join(offices, "office_id", "inner").show()
+
+# Since an inner join is the default, we can further simplify the join as follows:
+scientists.join(offices, "office_id").show()
+
+
+# Use the value `left` or `left_outer` to return every row in the left DataFrame with or without matching rows in the right DataFrame:
+scientists \
+  .join(offices, scientists.office_id == offices.office_id, "left_outer") \
+  .show()
+
+# This gives us a list of data scientists with or without an office.
+
+# Use the value `full`, `outer`, or `full_outer` to return the union of the left outer and right outer joins (with duplicates removed):
+scientists \
+  .join(offices, scientists.office_id == offices.office_id, "full_outer") \
+  .show()
+
+# This gives us a list of all data scientists whether or not they have an office and all offices whether or not they have any data scientists.
+
+#Sequence of leftouterjoin
+joined = rides \
+  .join(drivers, rides.driver_id == drivers.id, "left_outer") \
+  .join(riders, rides.rider_id == riders.id, "left_outer") \
+  .join(reviews, rides.id == reviews.ride_id, "left_outer")
+  joined.printSchema()
+  
+  
+# Count the number of reviews before the join:
+reviews.count()
+
+# Perform a right outer join:
+rides_with_reviews = rides.join(reviews, rides.id == reviews.ride_id, "right_outer")
+
+# Count the number of reviews after the join:
+rides_with_reviews.count()
+
+# Print the schema:
+rides_with_reviews.printSchema()
+
+
+# Get the driver IDs from `drivers` DataFrame:
+id_from_drivers = drivers.select("id")
+
+# Get the driver IDs from `rides` DataFrame:
+id_from_rides = rides.select("driver_id").withColumnRenamed("driver_id", "id")
+
+# Find lazy drivers using a left anti join:
+lazy_drivers1 = id_from_drivers.join(id_from_rides, "id", "left_anti")
+lazy_drivers1.count()
+lazy_drivers1.orderBy("id").show(5)
+
+# Find lazy drivers using a subtraction:
+lazy_drivers2 = id_from_drivers.subtract(id_from_rides)
+lazy_drivers2.count()
+lazy_drivers2.orderBy("id").show(5)
+  
+  
+  
+------------------PySpark Union and distinct and intersect-----------------------------
+
+driver_names = drivers.select("first_name")
+driver_names.count()
+
+rider_names = riders.select("first_name")
+rider_names.count()
+
+names_union = driver_names.union(rider_names).orderBy("first_name")
+names_union.count()
+names_union.show()
+
+Note that `union` does not remove duplicates. Use the `distinct` method to remove duplicates
+
+names_distinct = names_union.distinct()
+names_distinct.count()
+names_distinct.show()
+
+
+Use the `intersect` method to return rows that exist in both DataFrames
+name_intersect = driver_names.intersect(rider_names).orderBy("first_name")
+name_intersect.count()
+name_intersect.show()
+
+Use the `subtract` method to return rows in the left DataFrame that do not exist in the right DataFrame
+names_subtract = driver_names.subtract(rider_names).orderBy("first_name")
+names_subtract.count()
+names_subtract.show()
+
+
+
+
+
+
+
+
+-------------------Pyspark read data from tables and explain----------------------------
+Required for explain in Spark 3.1
+from py4j.java_gateway import java_import
+java_import(spark._sc._jvm, "org.apache.spark.sql.api.python.*")
+
+CREATE EXTERNAL TABLE IF NOT EXISTS dev_1_2953616_loudacre.accounts (
+    acct_num INT,
+    acct_create_dt TIMESTAMP,
+    acct_close_dt  TIMESTAMP,
+    first_name VARCHAR(255)  ,
+    last_name VARCHAR(255) ,
+    address  VARCHAR(255) ,
+    city  VARCHAR(255) ,
+    state VARCHAR(255) ,
+    zipcode VARCHAR(255) ,
+    phone_number VARCHAR(255) ,
+    created TIMESTAMP  ,
+    modified TIMESTAMP)
+    ROW FORMAT DELIMITED
+    FIELDS TERMINATED BY ','
+    STORED AS TEXTFILE
+    LOCATION 'tmp/loudacre/accounts'
+    TBLPROPERTIES ('external.table.purge'='true')
+
+LOAD DATA  INPATH 'tmp/raw/accounts' OVERWRITE INTO TABLE dev_1_2953616_loudacre.accounts
+
+
+t1= spark.read.table("dev_1_2953616_loudacre.accounts")
+t1.show()
+
+t1.explain(True)
+
+t2=t1.select('*').where(t1.state=='CA').show()
+
+
+
+accountsDF = spark.read.table("dev_1_2953616_loudacre.accounts")
+activeAccountsDF = accountsDF.select("acct_num").where(accountsDF.acct_close_dt.isNull())
+
+activeAccountsDF.explain(True)
+
+activeAccountsDF.show()
+
+accountDeviceDF = spark.read.option("header","true").option("inferSchema","true").csv("tmp/raw/accountdevice")
+activeAcctDevsDF = activeAccountsDF.join(accountDeviceDF,activeAccountsDF.acct_num == accountDeviceDF.account_id).select("device_id")
+
+
+
+-------------------------------------------PySpark  Dataframes--------------------------------------------------------
+
+rides = spark.read.csv("duocar/raw/rides/", header=True, inferSchema=True)
+rides.printSchema()
+
+drivers = spark.read.csv("duocar/raw/drivers/", header=True, inferSchema=True)
+drivers.printSchema()
+
+riders = spark.read.csv("duocar/raw/riders/", header=True, inferSchema=True)
+riders.printSchema()
+
+
+--Selecting Columns
+riders.select("birth_date", "student", "sex").printSchema()
+
+---Dropping Columns
+# Use the `drop` method to drop specific columns:
+riders.drop("first_name", "last_name", "ethnicity").printSchema()
+
+---Specifying Columns
+# We have used the column name to reference a DataFrame column:
+riders.select("first_name").printSchema()
+
+# We actually work with `Column` objects in Spark SQL.
+# Use the following syntax to reference a column object in a particular DataFrame:
+riders.select(riders.first_name).printSchema()
+riders.select(riders["first_name"]).printSchema()
+type(riders["first_name"])
+
+# Use the `col` function to reference a general column object:
+from pyspark.sql.functions import col
+riders.select(col("first_name")).printSchema()
+type(col("first_name"))
+
+# Use `*` (in quotes) to specify all columns:
+riders.select("*").printSchema()
+
+
+---Adding Columns
+# Use the `withColumn` method to add a new column:
+riders \
+  .select("student") \
+  .withColumn("student_boolean", col("student") == 1) \
+  .show()
+
+# The `select` method also works:
+riders.select("student", (col("student") == 1).alias("student_boolean")).show(5)
+
+# The `selectExpr` method accepts partial SQL expressions:
+riders.selectExpr("student", "student = 1 as student_boolean").show(5)
+
+# The `sql` method accepts full SQL statements:
+riders.createOrReplaceTempView("riders_view")
+spark.sql("select student, student = 1 as student_boolean from riders_view").show(5)
+
+
+-----Changing the column name
+
+# Use the `withColumnRenamed` method to rename a column:
+riders.withColumnRenamed("start_date", "join_date").printSchema()
+
+# Chain multiple methods to rename more than one column:
+riders \
+  .withColumnRenamed("start_date", "join_date") \
+  .withColumnRenamed("sex", "gender") \
+  .printSchema()
+  
+  
+
+----Changing the column type
+# Recall that `home_block` was read in as a (long) integer:
+riders.printSchema()
+
+# Use the `withColumn` (DataFrame) method in conjunction with the `cast`
+# (Column) method to change its type:
+riders.withColumn("home_block", col("home_block").cast("string")).printSchema()
+
+
+----Ordering rows(Ascending order is the default.)
+# Use the `sort` or `orderBy` method to sort a DataFrame by particular columns:
+rides \
+  .select("rider_id", "date_time") \
+  .sort("rider_id", "date_time", ascending=True) \
+  .show()
+
+rides \
+  .select("rider_id", "date_time") \
+  .orderBy("rider_id", "date_time", ascending=False) \
+  .show()
+
+# Use the `asc` and `desc` methods to specify the sort order:
+rides \
+  .select("rider_id", "date_time") \
+  .sort(col("rider_id").asc(), col("date_time").desc()) \
+  .show()
+
+# Alternatively, use the `asc` and `desc` functions to specify the sort order:
+from pyspark.sql.functions import asc, desc
+rides \
+  .select("rider_id", "date_time") \
+  .orderBy(asc("rider_id"), desc("date_time")) \
+  .show()
+  
+ 
+-------Selecting a fixed number of rows
+# Use the `limit` method to select a fixed number of rows:
+riders.select("student", "sex").limit(5).show()
+
+
+df.show(5) and df.limit(5).show()
+
+
+-----Selecting distinct rows
+# Use the `distinct` method to select distinct rows:
+riders.select("student", "sex").distinct().show()
+
+# You can also use the `dropDuplicates` method:
+riders.select("student", "sex").dropDuplicates().show()
+
+  
+------Filtering rows
+riders.filter(col("student") == 1).count()
+riders.where(col("sex") == "female").count()
+riders.filter(col("student") == 1).where(col("sex") == "female").count()
+
+
+------Sampling and groupby
+# Use the `sample` method to select a random sample of rows with or without
+# replacement:
+riders.count()
+riders.sample(withReplacement=False, fraction=0.1, seed=12345).count()
+
+# Use the `sampleBy` method to select a stratified random sample:
+riders \
+  .groupBy("sex") \
+  .count() \
+  .show() 
+riders \
+  .sampleBy("sex", fractions={"male": 0.2, "female": 0.8}, seed=54321) \
+  .groupBy("sex") \
+  .count() \
+  .show()
+
+
+------Working with missing values
+# Note the missing (null) values in the following DataFrame:
+riders_selected = riders.select("id", "sex", "ethnicity")
+riders_selected.show(25)
+
+# Drop rows with any missing values:
+riders_selected.dropna(how="any", subset=["sex", "ethnicity"]).show(25)
+
+# Drop rows with all missing values:
+riders_selected.na.drop(how="all", subset=["sex", "ethnicity"]).show(25)
+
+# Replace missing values with a common value:
+riders_selected.fillna("OTHER/UNKNOWN", ["sex", "ethnicity"]).show(25)
+
+# Replace missing values with different values:
+riders_missing = riders_selected.na.fill({"sex": "OTHER/UNKNOWN", "ethnicity": "MISSING"})
+riders_missing.show(25)
+
+# Replace arbitrary values with a common value:
+riders_missing.replace(["OTHER/UNKNOWN", "MISSING"], "NA", ["sex", "ethnicity"]).show(25)
+
+# Replace arbitrary values with different values:
+riders_missing.na.replace({"OTHER/UNKNOWN": "NA", "MISSING": "NO RESPONSE"}, None, ["sex", "ethnicity"]).show(25)
+
+
+---1 - Replace the missing values in `rides.service` with the string `Car`
+rides.select("service").distinct().show()
+rides_filled = rides.fillna("Car", subset=["service"])
+rides_filled.select("service").distinct().show()
+
+---2 - Rename `rides.cancelled` to `rides.canceled`
+rides_renamed = rides.withColumnRenamed("cancelled", "canceled")
+rides_renamed.printSchema()
+
+
+---3 - Sort the `rides` DataFrame in descending order with respect to # `driver_id` and ascending order with respect to `date_time`
+rides_sorted = rides.sort(rides.driver_id.desc(), "date_time")
+rides_sorted.select("driver_id", "date_time").show()
+
+---4 - Create an 20% random sample of the `rides` DataFrame
+rides.count()
+rides_sampled = rides.sample(withReplacement=False, fraction=0.2, seed=31416)
+rides_sampled.count()
+
+---5 - Remove the driver's name from the `drivers` DataFrame
+drivers_fixed = drivers.drop("first_name", "last_name")
+drivers_fixed.printSchema()
+
+---7 - How many female drivers have signed up?
+drivers.filter(drivers.sex == "female").count()
+
+---8 - How many non-white, female drivers have signed up?
+drivers.filter(drivers.ethnicity != "White").filter(drivers.sex == "female").count()
+drivers.filter(((drivers.ethnicity != "White") | (drivers.ethnicity.isNull())) & (drivers.sex == "female")).count()
+
+
+------Clean Database and HDFS Folders
+DROP DATABASE IF EXISTS dev_1_2953616_loudacre CASCADE;
+CREATE DATABASE dev_1_2953616_loudacre;
+USE dev_1_2953616_loudacre;
+
+CREATE EXTERNAL TABLE IF NOT EXISTS dev_1_2953616_loudacre.accounts (
+    acct_num INT,
+    acct_create_dt TIMESTAMP,
+    acct_close_dt  TIMESTAMP,
+    first_name VARCHAR(255)  ,
+    last_name VARCHAR(255) ,
+    address  VARCHAR(255) ,
+    city  VARCHAR(255) ,
+    state VARCHAR(255) ,
+    zipcode VARCHAR(255) ,
+    phone_number VARCHAR(255) ,
+    created TIMESTAMP  ,
+    modified TIMESTAMP)
+    ROW FORMAT DELIMITED
+    FIELDS TERMINATED BY ','
+    STORED AS TEXTFILE
+    LOCATION 'tmp/loudacre/accounts'
+    TBLPROPERTIES ('external.table.purge'='true')
+	
+LOAD DATA  INPATH 'tmp/raw/accounts' OVERWRITE INTO TABLE dev_1_2953616_loudacre.accounts
+
+
+---1 - Create a DataFrame that joins account data for all accounts with their associated devices
+accountsDF = spark.read.table("dev_1_2953616_loudacre.accounts")
+accountDeviceDF = spark.read.option("header","true").option("inferSchema","true").csv("tmp/raw/accountdevice")
+accountsDevsDF =  accountsDF.join(accountDeviceDF,accountsDF.acct_num == accountDeviceDF.account_id)
+
+---2 - Display the account number, first name, last name and device ID for each row
+accountsDevsDF.select("acct_num","first_name","last_name","device_id").show(5)
+
+----4 - Persist the accountsDevsDF DataFrame using the default storage level
+accountsDevsDF.persist()
+
+----9 - Execute the same query as above using the write action instead of show
+accountsDevsDF.write.mode("overwrite").save("loudacre/accounts_devices"
+
+
+----10 accountsDevsDF.write.mode("overwrite").save("loudacre/accounts_devices"
+accountsDevsDF.unpersist()
+
+----13 - Repersist the same DataFrame, setting the storage level to save the data to files on disk, replicated twice
+from pyspark import StorageLevel
+accountsDevsDF.persist(StorageLevel.DISK_ONLY_2)
+
+----14 - Reexecute the previous query
+accountsDevsDF.write.mode("overwrite").save("loudacre/accounts_devices")
+
+
+
+
+----------------------------------------PySpark  Reading and Writing Data---------------------------------------------------
+
+hdfs dfs -mkdir -p duocar
+hdfs dfs -put -f /var/tmp/dev/data/duocar/raw duocar
+hdfs dfs -put -f /var/tmp/dev/data/duocar/earcloud duocar
+
+
+hdfs dfs -mkdir -p data/tpcds/raw/customer
+hdfs dfs -put -f /var/tmp/dev/data/perf/tpcds-kit/customer.dat data/tpcds/raw/customer
+
+
+spark.sql("CREATE DATABASE IF NOT EXISTS dev_1_2953616_tpcds")
+spark.sql("USE dev_1_2953616_tpcds")
+spark.sql("CREATE EXTERNAL TABLE IF NOT EXISTS  customer_raw (          \
+                                        c_customer_sk bigint,           \
+                                        c_customer_id string,           \
+                                        c_current_cdemo_sk bigint,      \
+                                        c_current_hdemo_sk bigint,      \
+                                        c_current_addr_sk bigint,       \
+                                        c_first_shipto_date_sk bigint,  \
+                                        c_first_sales_date_sk bigint,   \
+                                        c_salutation string,            \
+                                        c_first_name string,            \
+                                        c_last_name string,             \
+                                        c_preferred_cust_flag string,   \
+                                        c_birth_day int,                \
+                                        c_birth_month int,              \
+                                        c_birth_year int,               \
+                                        c_birth_country string,         \
+                                        c_login string,                 \
+                                        c_email_address string,         \
+                                        c_last_review_date string)      \
+ROW FORMAT DELIMITED                                                    \
+FIELDS TERMINATED BY '|'                                                \
+STORED AS TEXTFILE                                                      \
+LOCATION 'data/tpcds/raw/customer'")
+spark.sql("CREATE EXTERNAL TABLE IF NOT EXISTS customer STORED AS PARQUET LOCATION 'data/tpcds/customer' AS SELECT * FROM customer_raw")
+spark.sql("DROP TABLE customer_raw")
+
+
+
+delete the raw files
+hdfs dfs -rm -r -f -skipTrash data/tpcds/raw
+
+
+--Use the csv method of the DataFrameReader class to read a delimited text file
+riders = spark.read.csv("duocar/raw/riders/", sep=",", header=True, inferSchema=True)
+
+
+---The `csv` method is a convenience method for the following more general syntax
+riders = spark \
+  .read \
+  .format("csv") \
+  .option("sep", ",") \
+  .option("header", True) \
+  .option("inferSchema", True) \
+  .load("duocar/raw/riders/")
+  
+---Alternatively, you can manually specify the schema
+# First, import the Spark SQL types
+from pyspark.sql.types import *
+
+# Then specify the schema as a `StructType` instance: 
+schema = StructType([
+    StructField("id", StringType(), True),
+    StructField("birth_date", DateType(), True),
+    StructField("join_date", DateType(), True),
+    StructField("first_name", StringType(), True),
+    StructField("last_name", StringType(), True),
+    StructField("gender", StringType(), True),
+    StructField("ethnicity", StringType(), True),
+    StructField("student", IntegerType(), True),
+    StructField("home_block", StringType(), True),
+    StructField("home_lat", DoubleType(), True),
+    StructField("home_lon", DoubleType(), True),
+    StructField("work_lat", DoubleType(), True),
+    StructField("work_lon", DoubleType(), True)
+])
+
+# Finally, pass the schema to the `DataFrameReader`:
+riders2 = spark \
+  .read \
+  .format("csv") \
+  .option("sep", ",") \
+  .option("header", True) \
+  .schema(schema) \
+  .load("duocar/raw/riders/")
+  
+  
+  
+----Use the `csv` method of the class to write the DataFrame to a tab-delimited file
+riders2.write.mode("overwrite").csv("data/riders_tsv/", sep="\t")
+
+--- Use the `mode` and the `compression` arguments
+riders2.write.csv("data/riders_tsv_compressed/", sep="\t", mode="overwrite", compression="bzip2")
+
+
+----Use the text method of the `DataFrameReader` class to read an unstructured text file
+weblogs = spark.read.text("duocar/earcloud/apache_logs/")
+weblogs.printSchema()
+weblogs.head(5)
+[Row(value='223.64.175.74 - - [01/May/2015:00:44:33 -0500] "GET /index.html HTTP/1.1" 200 1729 "http://www.google.com/search?q=songs" "Windows 7 Professional Edition" "USER=0"'), 
+Row(value='223.64.175.74 - - [01/May/2015:12:49:54 -0800] "GET /index.html HTTP/1.1" 200 1729 "http://www.google.com/search?q=songs" "Windows 7 Professional Edition" "USER=0"'), 
+Row(value='223.64.175.74 - - [01/May/2015:15:49:57 -0500] "GET /listen?artist=6624&playcount=110 HTTP/1.1" 200 7 "http://earcloud.com/" "Windows 7 Professional Edition" "USER=0"'), Row(value='223.64.175.74 - - [01/May/2015:23:11:48 -0800] "GET /index.html HTTP/1.1" 200 1729 "http://www.google.com/search?q=songs" "Windows 7 Professional Edition" "USER=0"'), Row(value='223.64.175.74 - - [01/May/2015:23:11:51 -0800] "GET /listen?artist=555&playcount=266 HTTP/1.1" 200 7 "http://earcloud.com/" "Windows 7 Professional Edition" "USER=0"')]
+
+
+---Parse the unstructured data
+from pyspark.sql.functions import regexp_extract
+requests = weblogs.select(regexp_extract("value", "^.*\"(GET.*?)\".*$", 1).alias("request")) 
+requests.head(5)
+
+[Row(request='GET /index.html HTTP/1.1'), Row(request='GET /index.html HTTP/1.1'), Row(request='GET /listen?artist=6624&playcount=110 HTTP/1.1'), Row(request='GET /index.html HTTP/1.1'), Row(request='GET /listen?artist=555&playcount=266 HTTP/1.1')]
+
+
+---Use the text method of the `DataFrameWriter` class to write an unstructured text file
+
+requests.write.mode("overwrite").text("data/requests_txt/")
+
+---Use the `parquet` method of the `DataFrameWriter` class to write to a Parquet file
+riders2.write.mode("overwrite").parquet("data/riders_parquet/")
+
+---Use the `parquet` method of the `DataFrameReader` class to the read from a Parquet file
+spark.read.parquet("data/riders_parquet/").printSchema()
+
+
+
+
+--------------------------With Hive tables--------------------
+
+Use the `sql` method of the `SparkSession` class to run Hive queries
+
+
+spark.sql("SHOW DATABASES").show()
+spark.sql("USE dev_1_2953616_tpcds")
+spark.sql("SHOW TABLES").show()
+spark.sql("DESCRIBE customer").show()
+spark.sql("SELECT * FROM customer LIMIT 10").show()
+
+
+Alternatively use the %sql magic
+%sql
+
+SELECT * FROM customer LIMIT 10
+
+
+-----Use the `table` method of the `DataFrameReader` class to read a Hive table
+customers_table = spark.read.table("customer")
+customers_table.printSchema()
+customers_table.show(5)
+
+
+-----Use the `saveAsTable` method of the `DataFrameWriter` class to write a Hive table
+
+import uuid
+table_name = "customers_" + str(uuid.uuid4().hex)  # Create unique table name.
+riders.write.saveAsTable(table_name, path='data/' + table_name)
+
+
+---You can now manipulate this table with Hive or Impala or via Spark SQL
+spark.sql("DESCRIBE %s" % table_name).show()
+
+
+---Drop the Hive table
+spark.sql("DROP TABLE IF EXISTS %s" % table_name)
+
+
+---1 - Use the `json` method of the `DataFrameWriter` class to write the `riders` DataFrame to the `data/riders_json/` (HDFS) directory
+riders.write.json("data/riders_json/", mode="overwrite")
+
+
+---2 - Use the `hdfs dfs -ls` command to list the contents of the # `data/riders_json/` directory
+hdfs dfs -ls data/riders_json
+
+---4 - Use the `json` method of the `DataFrameReader` class to read the JSON file into a DataFrame
+riders_json = spark.read.json("data/riders_json/")
+
+
+------------------------------------------------------Integration with HIVE------------------------------------------------
+
+------Required for Kerberos operations
+%sh
+echo {password.global} | kinit {user.global}
+
+
+---Clean Database and HDFS Folders
+%jdbc(hive)
+
+DROP DATABASE IF EXISTS dev_1_2953616_sparkdb CASCADE;
+CREATE DATABASE dev_1_2953616_sparkdb;
+USE dev_1_2953616_sparkdb;
+
+
+%sh
+
+hdfs dfs -rm -r tmp/raw
+hdfs dfs -mkdir -p tmp/raw
+hdfs dfs -put -f /var/tmp/dev/data/perf/tpcds-kit/customer.dat tmp/raw
+hdfs dfs -chmod -R 777 tmp/raw/
+hdfs dfs -mkdir -p tmp/tpcds
+hdfs dfs -chmod 777 tmp/tpcds
+
+
+----Create the database using Spark
+%pyspark
+
+spark.sql("CREATE DATABASE IF NOT EXISTS dev_1_2953616_sparkdb")
+spark.sql("USE dev_1_2953616_sparkdb")
+
+
+
+CREATE EXTERNAL TABLE IF NOT EXISTS  customer_spark_external (
+                                        c_customer_sk bigint,
+                                        c_customer_id string,
+                                        c_current_cdemo_sk bigint,
+                                        c_current_hdemo_sk bigint,
+                                        c_current_addr_sk bigint,
+                                        c_first_shipto_date_sk bigint,
+                                        c_first_sales_date_sk bigint,
+                                        c_salutation string,
+                                        c_first_name string,
+                                        c_last_name string,
+                                        c_preferred_cust_flag string,
+                                        c_birth_day int,
+                                        c_birth_month int,
+                                        c_birth_year int,
+                                        c_birth_country string,
+                                        c_login string,
+                                        c_email_address string,
+                                        c_last_review_date string)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '|'
+STORED AS TEXTFILE
+LOCATION 'tmp/tpcds/customer'
+TBLPROPERTIES ('external.table.purge'='true')
+
+
+
+%sql
+
+LOAD DATA  INPATH 'tmp/raw/customer.dat' OVERWRITE INTO TABLE customer_spark_external
+
+%sql
+
+CREATE TABLE IF NOT EXISTS  customer_spark_managed AS SELECT * FROM customer_spark_external
+
+SELECT * FROM customer_spark_external
+
+
+SELECT * FROM customer_spark_managed
+
+---Inspect customer_external table create statement
+spark.sql("SHOW CREATE TABLE customer_spark_external").show(truncate=False)
+
+
+
+---Inspect customer_managed table create statement
+spark.sql("SHOW CREATE TABLE customer_spark_managed").show(truncate=False)
+
+
+
+---Create hive managed table---
+%jdbc(hive)
+
+DROP DATABASE IF EXISTS dev_1_2953616_hivedb CASCADE;
+
+CREATE DATABASE dev_1_2953616_hivedb;
+USE dev_1_2953616_hivedb;
+
+CREATE TABLE IF NOT EXISTS  customer_hive_managed (
+c_customer_sk bigint,
+c_customer_id string,
+c_current_cdemo_sk bigint,
+c_current_hdemo_sk bigint,
+c_current_addr_sk bigint,
+c_first_shipto_date_sk bigint,
+c_first_sales_date_sk bigint,
+c_salutation string,
+c_first_name string,
+c_last_name string,
+c_preferred_cust_flag string,
+c_birth_day int,
+c_birth_month int,
+c_birth_year int,
+c_birth_country string,
+c_login string,
+c_email_address string,
+c_last_review_date string);
+
+
+
+spark.sql("show databases").show()
+spark.sql("use dev_1_2953616_hivedb")
+spark.sql("show tables").show()
+
+
+spark.sql("SHOW CREATE TABLE dev_1_2953616_hivedb.customer_hive_managed").show(truncate=False)
+
+
+---Seems  Spark can access only Hive external tables--------------------
+cannot access The table is stored using the ORC format and it is 'transactional'....
+
+
+CREATE TABLE IF NOT EXISTS  dev_1_2953616_prod.customer AS SELECT * FROM dev_1_2953616_staging.customer;
+
+
+
+
+--------------------------------------------------Wroking with columns----------------------------------------------
+
+rides = spark.read.csv("duocar/raw/rides/", header=True, inferSchema=True)
+drivers = spark.read.csv("duocar/raw/drivers/", header=True, inferSchema=True)
+riders = spark.read.csv("duocar/raw/riders/", header=True, inferSchema=True)
+
+
+
+---Example 1: Converting ride distance from meters to miles
+
+from pyspark.sql.functions import col, round
+rides \
+  .select("distance", round(col("distance") / 1609.344, 2).alias("distance_in_miles")) \
+  .show(5)
+  
+  
+  
+----To add a new column, use the `withColumn` method with a new column name
+rides \
+  .withColumn("distance_in_miles", round(col("distance") / 1609.344, 2)) \
+  .printSchema()
+  
+---To replace an existing column, use the `withColumn` method with an existing column name
+rides \
+  .withColumn("distance", round(col("distance") / 1609.344, 2)) \
+  .printSchema()
+  
+  
+  
+---Example 2: Converting the ride id from an integer to a string
+from pyspark.sql.functions import format_string
+rides \
+  .withColumn("id_fixed", format_string("%010d", "id")) \
+  .select("id", "id_fixed") \
+  .show(5)
+  
+  
+---Example 3: Converting the student flag from an integer to a Boolean using a Boolean expression
+riders \
+  .withColumn("student_boolean", col("student") == 1) \
+  .select("student", "student_boolean") \
+  .show(5)
+  
+---Or using the `cast` method
+
+riders \
+  .withColumn("student_boolean", col("student").cast("boolean")) \
+  .select("student", "student_boolean") \
+  .show(5)
+  
+---Example 4: Normalizing a string column
+# Use the `trim` and `upper` functions to normalize `riders.sex`:
+from pyspark.sql.functions import trim, upper
+riders \
+  .withColumn("gender", upper(trim(col("sex")))) \
+  .select("sex", "gender") \
+  .show(5)
+  
+  here gender is the new column .. always left side first column is the new column
+---Example 5: Extracting a substring from a string column
+from pyspark.sql.functions import substring
+riders \
+  .withColumn("home_block_group", substring("home_block", 1, 12)) \
+  .select("home_block", "home_block_group") \
+  .show(5)
+  
+  
+  
+----Example 6: Extracting a substring using a regular expression
+# Use the `regexp_extract` function to extract the Census Block Group via a regular expression
+from pyspark.sql.functions import regexp_extract
+riders \
+  .withColumn("home_block_group", regexp_extract("home_block", "^(\d{12}).*", 1)) \
+  .select("home_block", "home_block_group") \
+  .show(5)
+  
+  
+------Example 7: Converting a timestamp to a date
+%pyspark
+
+# Note that `riders.birth_date` and `riders.start_date` were read in as timestamps:
+riders.select("birth_date", "start_date").show(5)
+
+# Use the `cast` method to convert `riders.birth_date` to a date:
+riders \
+  .withColumn("birth_date_fixed", col("birth_date").cast("date")) \
+  .select("birth_date", "birth_date_fixed") \
+  .show(5)
+
+# Alternatively, use the `to_date` function:
+from pyspark.sql.functions import to_date
+riders \
+  .withColumn("birth_date_fixed", to_date("birth_date")) \
+  .select("birth_date", "birth_date_fixed") \
+  .show(5)
+  
+  
+-----Example 8: Converting a string to a timestamp
+%pyspark
+
+# Note that `rides.date_time` was read in as a string:
+rides.printSchema()
+
+# Use the `cast` method to convert it to a timestamp:
+rides \
+  .withColumn("date_time_fixed", col("date_time").cast("timestamp")) \
+  .select("date_time", "date_time_fixed") \
+  .show(5)
+
+# Alternatively, use the `to_timestamp` function:
+from pyspark.sql.functions import to_timestamp
+rides \
+  .withColumn("date_time_fixed", to_timestamp("date_time", format="yyyy-MM-dd HH:mm")) \
+  .select("date_time", "date_time_fixed") \
+  .show(5)
+  
+  
+  
+--------Example 9: Computing the age of each rider
+%pyspark
+
+# Use the `current_date` and `months_between` functions to compute the age of each rider:
+from pyspark.sql.functions import current_date, months_between, floor
+riders \
+  .withColumn("today", current_date()) \
+  .withColumn("age", floor(months_between("today", "birth_date") / 12)) \
+  .select("birth_date", "today", "age") \
+  .show(5)
+  
+----Example 10: Predefining a Boolean column expression
+
+# You can predefine a Boolean column expression:
+studentFilter = col("student") == 1
+type(studentFilter)
+
+# You can use the predefined expression to create a new column:
+riders \
+  .withColumn("student_boolean", studentFilter) \
+  .select("student", "student_boolean") \
+  .show(5)
+
+# Or filter a DataFrame:
+riders \
+  .filter(studentFilter) \
+  .select("student") \
+  .show(5)
+  
+  
+----Example 11: Working with multiple Boolean column expressions
+%pyspark
+
+# Predefine the Boolean column expressions:
+studentFilter = col("student") == 1
+maleFilter = col("sex") == "male"
+
+# Create a new column using the AND (`&`) operator:
+riders.select("student", "sex", studentFilter & maleFilter).show(15)
+
+# Create a new column using the OR (`|`) operator:
+riders.select("student", "sex", studentFilter | maleFilter).show(15)
+
+------Example 12: Using multiple Boolean expressions in a filter
+%pyspark
+
+# Use `&` for a logical AND:
+riders.filter(maleFilter & studentFilter).select("student", "sex").show(5)
+
+# This is equivalent to
+riders.filter(maleFilter).filter(studentFilter).select("student", "sex").show(5)
+
+# Use `|` for a logical OR:
+riders.filter(maleFilter | studentFilter).select("student", "sex").show(5)
+
+# Be careful with missing (null) values:
+riders.select("sex").distinct().show()
+riders.filter(col("sex") != "male").select("sex").distinct().show()
+
+
+-----------1 - Extract the hour of day and day of week from `rides.date_time
+%pyspark
+
+from pyspark.sql.functions import hour, dayofweek
+rides \
+  .withColumn("hour_of_day", hour("date_time")) \
+  .withColumn("day_of_week", dayofweek("date_time")) \
+  .select("date_time", "hour_of_day", "day_of_week") \
+  .show(5)
+  
+---------2 - Convert `rides.duration` from seconds to minutes
+
+from pyspark.sql.functions import col, round
+rides \
+  .withColumn("duration_in_minutes", round(col("duration") / 60, 1)) \
+  .select("duration", "duration_in_minutes") \
+  .show(5)
+  
+  
+---------3 - Convert `rides.cancelled` to a Boolean column
+# Using the `cast` method:
+rides \
+  .withColumn("cancelled", col("cancelled").cast("boolean")) \
+  .select("cancelled") \
+  .show(5)
+
+# Using a Boolean expression:
+rides \
+  .withColumn("cancelled", col("cancelled") == 1) \
+  .select("cancelled") \
+  .show(5)
+  
+-------4 - Create an integer column named `five_star_rating` that is 1.0 if the ride # received a five-star rating and 0.0 otherwise
+%pyspark
+
+# Using a Boolean expression and the `cast` method:
+rides \
+  .withColumn("five_star_rating", (col("star_rating") > 4.5).cast("double")) \
+  .select("star_rating", "five_star_rating") \
+  .show(10)
+  
+# Using the `when` function and the `when` and `otherwise` methods:
+from pyspark.sql.functions import when
+rides \
+  .withColumn("five_star_rating", when(col("star_rating").isNull(), None).when(col("star_rating") == 5, 1.0).otherwise(0.0)) \
+  .select("star_rating", "five_star_rating") \
+  .show(10)
+  
+  -----------5 - Create a new column containing the full name for each driver
+%pyspark
+
+from pyspark.sql.functions import concat_ws
+drivers \
+  .withColumn("full_name", concat_ws(" ", "first_name", "last_name")) \
+  .select("first_name", "last_name", "full_name") \
+  .show(5)
+  
+  
+----6 - Create a new column containing the average star rating for each driver
+%pyspark
+
+drivers \
+  .withColumn("star_rating", round(col("stars") / col("rides"), 2)) \
+  .select("rides", "stars", "star_rating") \
+  .show(5)
+
+
+-----------7 - Find the rider names that are most similar to `Brian`
+from pyspark.sql.functions import lit, levenshtein
+riders \
+  .select("first_name") \
+  .distinct() \
+  .withColumn("distance", levenshtein(col("first_name"), lit("Brian"))) \
+  .sort("distance") \
+  .show()
+  
+  
+  
+-----------------------------------Grouping data-----------------------------
+
+Use the `agg` method with the `groupBy` (or `groupby`) method to refine your analysis
+(rides 
+  .groupBy("rider_student")
+  .agg(count("*"), count("distance"), mean("distance"), stddev("distance"))
+  .show())
+  
+  
+You can use more than one column in the `groupBy` method
+%spark
+
+(rides 
+  .groupBy("rider_student", "service")
+  .agg(count("*"), count("distance"), mean("distance"), stddev("distance"))
+  .orderBy("rider_student", "service")
+  .show())
+  
+  
+
+-----------Pivoting data
+
+The following use case is common
+
+rides.groupBy("rider_student", "service").count().orderBy("rider_student", "service").show()
+
+
+--We can also use the `pivot` method to produce a cross-tabulation
+%spark
+
+rides.groupBy("rider_student").pivot("service").count().show()
+
+
+--- We can also perform other aggregations
+%spark
+
+rides.groupBy("rider_student").pivot("service").mean("distance").show()
+rides.groupBy("rider_student").pivot("service").agg(mean("distance")).show()
+
+----You can explicitly choose the values that are pivoted to columns
+%spark
+
+rides.groupBy("rider_student").pivot("service", Array("Car", "Grand")).agg(mean("distance")).show()
+
+----Additional aggregation functions produce additional columns
+
+%spark
+
+rides.groupBy("rider_student").pivot("service", Array("Car")).agg(count("distance"), mean("distance")).show()
+
+
+-----
+%spark
+
+import org.apache.spark.sql.functions.{col}
+
+(rides
+  .filter(col("cancelled") === false)
+  .groupBy("rider_id")
+  .count()
+  .orderBy(col("count").desc)
+  .show(10))
+  
+  
+  
+----
+%spark
+
+import org.apache.spark.sql.functions.{sum}
+
+(rides
+  .groupBy("driver_id")
+  .agg(sum("distance").alias("sum_distance"))
+  .orderBy(col("sum_distance").desc)
+  .show(10))
+  
+----%spark
+
+rides.groupBy("cancelled").count.show
+
+
+-----
+%spark
+
+rides.groupBy("star_rating").count().orderBy("star_rating").show()
+
+// The star rating is missing when a ride is cancelled:
+rides.groupBy("star_rating").pivot("cancelled").count().orderBy("star_rating").show()
+
+
+-----
+
+%spark
+
+rides.groupBy("service").mean("star_rating").show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+
+  
+  ------------------------Working with Complex datatypes----------------------
+  
+  %pyspark
+
+rides = spark.read.csv("duocar/raw/rides/", header=True, inferSchema=True)
+drivers = spark.read.csv("duocar/raw/drivers/", header=True, inferSchema=True)
+riders = spark.read.csv("duocar/raw/riders/", header=True, inferSchema=True)
+
+
+----Use the array function to create an array from multiple columns
+%pyspark
+
+from pyspark.sql.functions import array
+drivers_array = drivers \
+  .withColumn("vehicle_array", array("vehicle_make", "vehicle_model")) \
+  .select("vehicle_make", "vehicle_model", "vehicle_array")
+drivers_array.printSchema()
+drivers_array.show(5, False)
+
+
+----Use index notation to access elements of the array
+
+from pyspark.sql.functions import col
+drivers_array \
+  .select("vehicle_array", col("vehicle_array")[0]) \
+  .show(5, False)
+  
+  
+----Use the size function to get the length of the array
+%pyspark
+
+from pyspark.sql.functions import size
+drivers_array \
+  .select("vehicle_array", size("vehicle_array")) \
+  .show(5, False)
+  
+---Use the sort_array function to sort the array
+%pyspark
+
+from pyspark.sql.functions import sort_array
+drivers_array \
+  .select("vehicle_array", sort_array("vehicle_array", asc=True)) \
+  .show(5, False)
+  
+  
+-----Use the `array_contains` function to search the array
+%pyspark
+
+from pyspark.sql.functions import array_contains
+drivers_array \
+  .select("vehicle_array", array_contains("vehicle_array", "Subaru")) \
+  .show(5, False)
+
+------Use the `explode` and `posexplode` functions to explode the array
+%pyspark
+
+from pyspark.sql.functions import explode, posexplode
+drivers_array \
+  .select("vehicle_array", explode("vehicle_array")) \
+  .show(5, False)
+drivers_array \
+  .select("vehicle_array", posexplode("vehicle_array")) \
+  .show(5, False)
+  
+------Note that you can pass multiple names to the `alias` method
+%pyspark
+
+drivers_array \
+  .select("vehicle_array", posexplode("vehicle_array").alias("position", "column")) \
+  .show(5, False)
+  
+  
+------------------------------------------Maps---------------------------------------
+Use the create_map function to create a map
+from pyspark.sql.functions import lit, create_map
+drivers_map = drivers \
+  .withColumn("vehicle_map", create_map(lit("make"), "vehicle_make", lit("model"), "vehicle_model")) \
+  .select("vehicle_make", "vehicle_model", "vehicle_map")
+drivers_map.printSchema()
+drivers_map.show(5, False)
+
+
+-----Use dot notation to access a value by key
+%pyspark
+
+drivers_map.select("vehicle_map", col("vehicle_map").make).show(5, False)
+
+-------Use the `size` function to get the length of the map
+%pyspark
+
+drivers_map.select("vehicle_map", size("vehicle_map")).show(5, False)
+
+-----Use the `explode` and `posexplode` functions to explode the map
+%pyspark
+
+drivers_map.select("vehicle_map", explode("vehicle_map")).show(5, False)
+drivers_map.select("vehicle_map", posexplode("vehicle_map")).show(5, False)
+
+
+-------------------------------------------STRUCTS-----------------------------------------
+
+Use the struct function to create a struct
+
+from pyspark.sql.functions import struct
+drivers_struct = drivers \
+  .withColumn("vehicle_struct", struct(col("vehicle_make").alias("make"), col("vehicle_model").alias("model"))) \
+  .select("vehicle_make", "vehicle_model", "vehicle_struct")
+drivers_struct.printSchema()
+drivers_struct.show(5, False)
+drivers_struct.head(5)
+
+
+
+------The struct is a Row object (embedded in a Row object)
+
+Use dot notation to access struct elements
+
+drivers_struct \
+  .select("vehicle_struct", col("vehicle_struct").make) \
+  .show(5, False)
+
+
+------Use the `to_json` function to convert the struct to a JSON string
+%pyspark
+
+from pyspark.sql.functions import to_json
+drivers_struct \
+  .select("vehicle_struct", to_json("vehicle_struct")) \
+  .show(5, False)
+  
+  
+  
+---1 - Create an array called `home_array` that includes the driver's home latitude and longitude
+%pyspark
+
+from pyspark.sql.functions import array
+
+drivers_array = drivers \
+  .withColumn("home_array", array("home_lat", "home_lon"))
+
+drivers_array \
+  .select("home_lat", "home_lon", "home_array") \
+  .show(5, False)
+  
+  
+  ----2 - Create a map called `name_map` that includes the driver's first and last name
+  
+  %pyspark
+
+from pyspark.sql.functions import lit, create_map
+
+drivers_map = drivers \
+  .withColumn("name_map", create_map(lit("first"), "first_name", lit("last"), "last_name"))
+  
+drivers_map \
+  .select("first_name", "last_name", "name_map") \
+  .show(5, False)
+  
+  -------3 - Create a struct called `name_struct` that includes the driver's first # and last name
+  
+  %pyspark
+
+from pyspark.sql.functions import col, struct
+drivers_struct = drivers \
+  .withColumn("name_struct", struct(col("first_name").alias("first"), col("last_name").alias("last")))
+
+from pyspark.sql.functions import to_json
+drivers_struct \
+  .select("first_name", "last_name", "name_struct", to_json("name_struct")) \
+  .show(5, False)
+
+
+
+  
+  
+
+
+
+
+
+
+
+
+
+
+
