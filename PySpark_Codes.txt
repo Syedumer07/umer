@@ -599,6 +599,11 @@ hdfs dfs -ls data/riders_json
 riders_json = spark.read.json("data/riders_json/")
 
 
+
+---I was able to write to partitioned hive table using 
+df.write().mode(SaveMode.Append).partitionBy("colname").saveAsTable("Table")
+
+
 ------------------------------------------------------Integration with HIVE------------------------------------------------
 
 ------Required for Kerberos operations
